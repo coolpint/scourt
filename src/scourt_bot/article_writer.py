@@ -8,6 +8,7 @@ from .config import Settings
 from .models import ArticleDraft, NoticeDetail, NoticeSummary
 
 KEYWORDS = ("대법원", "판결", "선고", "사건", "상고", "기각", "인용", "파기", "확정")
+CARD_BODY_LIMIT = 1000
 
 
 def _clean(text: str) -> str:
@@ -47,6 +48,20 @@ def _is_noise(sentence: str) -> bool:
         "전화",
         "☎",
         "문의",
+        "보도자료",
+        "판결 결과 ▣",
+        "선고일자",
+        "사건개요",
+        "쟁점 및 판단",
+        "참조조문",
+        "참조판례",
+        "공소사실의 요지",
+        "판단 내용",
+        "쟁점(",
+        "▣",
+        "●",
+        "- 2 -",
+        "- 3 -",
     )
     if any(token in sentence for token in checks):
         return True
@@ -57,6 +72,38 @@ def _is_noise(sentence: str) -> bool:
     if len(sentence) < 40 and not has_ending:
         return True
     return False
+
+
+def _compose_body(primary: list[str], secondary: list[str], limit: int) -> str:
+    ordered: list[str] = []
+    seen = set()
+    source = primary if primary else secondary
+    for sentence in source:
+        if sentence in seen:
+            continue
+        seen.add(sentence)
+        ordered.append(sentence)
+        if len(ordered) >= 6:
+            break
+
+    if not ordered:
+        return ""
+
+    body_parts: list[str] = []
+    for sentence in ordered:
+        candidate = " ".join(body_parts + [sentence]).strip()
+        if len(candidate) <= limit:
+            body_parts.append(sentence)
+            continue
+
+        if not body_parts:
+            return _trim_sentence(sentence, max_len=limit)
+        break
+
+    body = " ".join(body_parts).strip()
+    if len(body) > limit:
+        body = _trim_sentence(body, max_len=limit)
+    return body
 
 
 def _pick_key_points(text: str, limit: int = 3) -> list[str]:
@@ -95,47 +142,26 @@ class ArticleWriter:
         detail: NoticeDetail,
         pdf_text: str,
     ) -> ArticleDraft:
-        detail_points = [
-            _trim_sentence(sentence)
-            for sentence in _split_sentences(detail.body_text)
-            if not _is_noise(sentence)
-        ]
-        pdf_points = _pick_key_points(pdf_text, limit=5)
-
-        lead = ""
-        for sentence in detail_points:
-            if "대법원" in sentence:
-                lead = sentence
-                break
-        if not lead:
-            lead = detail_points[0] if detail_points else ""
-        if not lead:
-            for sentence in pdf_points:
-                if "대법원" in sentence:
-                    lead = sentence
-                    break
-        if not lead:
-            lead = pdf_points[0] if pdf_points else (detail.body_text or summary.title)
-        lead = _clean(lead)
-
-        key_points = list(detail_points[:3])
-        for sentence in pdf_points:
-            if len(key_points) == 3:
-                break
-            if sentence in key_points:
+        detail_points = []
+        for sentence in _split_sentences(detail.body_text):
+            if _is_noise(sentence):
                 continue
-            key_points.append(sentence)
+            detail_points.append(_trim_sentence(sentence))
+
+        pdf_points = _pick_key_points(pdf_text, limit=8)
+        body = _compose_body(detail_points, [], CARD_BODY_LIMIT)
+        if not body:
+            body = _compose_body([], pdf_points, CARD_BODY_LIMIT)
+        if not body:
+            body = _trim_sentence(detail.body_text or summary.title, max_len=CARD_BODY_LIMIT)
 
         now_kst = datetime.now(ZoneInfo(self.settings.timezone)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        if not key_points:
-            key_points = [lead]
 
         return ArticleDraft(
             headline=_headline_from_title(detail.title),
-            lead=lead,
-            key_points=key_points[:3],
+            body=body,
             posted_date=summary.posted_date,
             detail_url=detail.detail_url,
             pdf_url=detail.pdf_url,

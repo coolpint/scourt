@@ -11,12 +11,6 @@ class TeamsNotifier:
         self.session = requests.Session()
 
     def send(self, article: ArticleDraft) -> None:
-        points = article.key_points[:3] or [article.lead]
-        points_text = "\n".join(f"{idx}. {value}" for idx, value in enumerate(points, 1))
-        detail_md = f"[보도자료 상세 바로가기]({article.detail_url})"
-        pdf_md = (
-            f"[첨부 PDF 바로가기]({article.pdf_url})" if article.pdf_url else "첨부 PDF 없음"
-        )
         payload = {
             "@type": "MessageCard",
             "@context": "https://schema.org/extensions",
@@ -26,13 +20,7 @@ class TeamsNotifier:
             "sections": [
                 {
                     "activityTitle": f"**{article.headline}**",
-                    "activitySubtitle": f"게시일: {article.posted_date}",
-                    "text": (
-                        f"**리드**\n{article.lead}\n\n"
-                        f"**핵심 3포인트**\n{points_text}\n\n"
-                        f"{detail_md}\n\n{pdf_md}\n\n"
-                        f"수집시각: {article.collected_at}"
-                    ),
+                    "text": article.body,
                     "markdown": True,
                 }
             ],
