@@ -1,0 +1,74 @@
+name: scourt-news-bot
+
+on:
+  schedule:
+    # 10:00 KST
+    - cron: "0 1 * * *"
+    # 18:00 KST
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: scourt-news-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      SCOURT_TIMEZONE: Asia/Seoul
+      SCOURT_MAX_PAGES: "2"
+      SCOURT_DB_PATH: data/scourt_news.db
+      SCOURT_PDF_DIR: data/pdfs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore state cache
+        id: state-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/scourt_news.db
+          key: scourt-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            scourt-state-${{ runner.os }}-${{ github.ref_name }}-
+
+      - name: Validate required secret
+        run: |
+          if [ -z "${TEAMS_WEBHOOK_URL}" ]; then
+            echo "TEAMS_WEBHOOK_URL secret is required"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Run bot
+        run: |
+          mkdir -p data/pdfs logs
+          scourt-bot run 2>&1 | tee logs/run.log
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/scourt_news.db
+          key: scourt-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scourt-bot-logs-${{ github.run_id }}
+          path: logs/run.log
+          if-no-files-found: ignore
