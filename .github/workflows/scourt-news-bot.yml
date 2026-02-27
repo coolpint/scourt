@@ -16,7 +16,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL || vars.TEAMS_WEBHOOK_URL }}
       SCOURT_TIMEZONE: Asia/Seoul
       SCOURT_MAX_PAGES: "2"
       SCOURT_DB_PATH: data/scourt_news.db
