@@ -37,7 +37,7 @@ jobs:
         with:
           path: |
             data/scourt_news.db
-          key: scourt-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: scourt-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             scourt-state-${{ runner.os }}-${{ github.ref_name }}-
 
@@ -68,11 +68,12 @@ jobs:
 
       - name: Save state cache
         if: always()
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: |
             data/scourt_news.db
-          key: scourt-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: scourt-state-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload run logs
         if: always()
