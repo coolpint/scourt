@@ -16,7 +16,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL || vars.TEAMS_WEBHOOK_URL }}
+      TEAMS_WEBHOOK_SECRET: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      TEAMS_WEBHOOK_VAR: ${{ vars.TEAMS_WEBHOOK_URL }}
       SCOURT_TIMEZONE: Asia/Seoul
       SCOURT_MAX_PAGES: "2"
       SCOURT_DB_PATH: data/scourt_news.db
@@ -42,10 +43,18 @@ jobs:
 
       - name: Validate required secret
         run: |
-          if [ -z "${TEAMS_WEBHOOK_URL}" ]; then
-            echo "TEAMS_WEBHOOK_URL secret is required"
-            exit 1
+          if [ -n "${TEAMS_WEBHOOK_SECRET}" ]; then
+            echo "Using repository secret: TEAMS_WEBHOOK_URL"
+            echo "TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_SECRET}" >> "$GITHUB_ENV"
+            exit 0
           fi
+          if [ -n "${TEAMS_WEBHOOK_VAR}" ]; then
+            echo "Using repository variable: TEAMS_WEBHOOK_URL"
+            echo "TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_VAR}" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "Missing TEAMS_WEBHOOK_URL in both repository Secrets and Variables."
+          exit 1
 
       - name: Install dependencies
         run: |
