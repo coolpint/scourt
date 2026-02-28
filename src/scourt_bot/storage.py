@@ -35,6 +35,15 @@ class StateStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
             conn.commit()
 
     def get_notice(self, notice_id: str) -> dict[str, Any] | None:
@@ -115,3 +124,37 @@ class StateStore:
                 (timestamp_iso, timestamp_iso, notice_id),
             )
             conn.commit()
+
+    def get_meta(self, key: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM metadata WHERE key = ?",
+                (key,),
+            ).fetchone()
+            return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str, timestamp_iso: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO metadata (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value, timestamp_iso),
+            )
+            conn.commit()
+
+    def get_last_seen_notice_id(self) -> int | None:
+        raw = self.get_meta("last_seen_notice_id")
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    def set_last_seen_notice_id(self, notice_id: int, timestamp_iso: str) -> None:
+        self.set_meta("last_seen_notice_id", str(notice_id), timestamp_iso)

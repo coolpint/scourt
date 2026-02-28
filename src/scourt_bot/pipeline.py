@@ -20,6 +20,13 @@ def _hash_content(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _notice_id_as_int(notice_id: str) -> int:
+    try:
+        return int(notice_id)
+    except (TypeError, ValueError):
+        return 0
+
+
 class ScourtPipeline:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -54,25 +61,56 @@ class ScourtPipeline:
         for notice in all_notices:
             deduped.setdefault(notice.notice_id, notice)
 
-        ordered = sorted(
-            deduped.values(),
-            key=lambda x: (x.posted_date, int(x.notice_id)),
-        )
+        ordered = sorted(deduped.values(), key=lambda x: _notice_id_as_int(x.notice_id))
 
         stats = RunStats(scanned=len(ordered))
         now_iso = datetime.now(ZoneInfo(self.settings.timezone)).isoformat()
-        bootstrap_mode = (
-            not dry_run
-            and not force
-            and self.settings.bootstrap_skip_send
-            and self.store.is_empty()
+        last_seen_id = self.store.get_last_seen_notice_id()
+        latest_seen_id = (
+            _notice_id_as_int(ordered[-1].notice_id) if ordered else last_seen_id
         )
-        if bootstrap_mode:
-            LOGGER.warning(
-                "초기 기준선 모드: DB가 비어 있어 이번 실행에서는 알림 전송 없이 상태만 저장합니다."
+
+        if ordered and not force and last_seen_id is not None:
+            LOGGER.info(
+                "신규 판정 기준: last_seen_notice_id=%s, latest_notice_id=%s",
+                last_seen_id,
+                latest_seen_id,
             )
 
-        for summary in ordered:
+        if (
+            ordered
+            and not dry_run
+            and not force
+            and self.settings.bootstrap_skip_send
+            and last_seen_id is None
+        ):
+            self.store.set_last_seen_notice_id(latest_seen_id, now_iso)
+            stats.skipped = len(ordered)
+            LOGGER.warning(
+                "초기 기준선 모드: last_seen_notice_id=%s 로 설정하고 이번 실행 전송은 건너뜁니다.",
+                latest_seen_id,
+            )
+            return stats
+
+        if force or last_seen_id is None:
+            targets = ordered
+        else:
+            targets = [
+                notice
+                for notice in ordered
+                if _notice_id_as_int(notice.notice_id) > last_seen_id
+            ]
+
+        stats.skipped += max(0, len(ordered) - len(targets))
+        if not force:
+            LOGGER.info(
+                "대상 건수: total=%s, new=%s, old=%s",
+                len(ordered),
+                len(targets),
+                len(ordered) - len(targets),
+            )
+
+        for summary in targets:
             try:
                 detail = self.client.fetch_notice_detail(summary)
 
@@ -118,11 +156,6 @@ class ScourtPipeline:
                 )
                 stats.processed += 1
 
-                if bootstrap_mode:
-                    self.store.mark_sent(summary.notice_id, now_iso)
-                    stats.skipped += 1
-                    continue
-
                 if dry_run:
                     LOGGER.info("[DRY RUN] article generated: %s", detail.title)
                     continue
@@ -136,5 +169,11 @@ class ScourtPipeline:
             except Exception:
                 stats.failed += 1
                 LOGGER.exception("처리 실패: notice_id=%s", summary.notice_id)
+
+        if not force and latest_seen_id is not None:
+            next_seen = latest_seen_id if last_seen_id is None else max(
+                last_seen_id, latest_seen_id
+            )
+            self.store.set_last_seen_notice_id(next_seen, now_iso)
 
         return stats
