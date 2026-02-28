@@ -14,6 +14,17 @@ def _as_int(value: str, default: int) -> int:
         return default
 
 
+def _as_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    return default
+
+
 def _as_hours(value: str) -> tuple[int, ...]:
     raw = [v.strip() for v in value.split(",") if v.strip()]
     hours = []
@@ -39,6 +50,7 @@ class Settings:
     pdf_dir: Path
     teams_webhook_url: str | None
     user_agent: str
+    bootstrap_skip_send: bool
 
     @classmethod
     def load(cls) -> "Settings":
@@ -70,5 +82,9 @@ class Settings:
             user_agent=os.getenv(
                 "SCOURT_USER_AGENT",
                 "scourt-news-bot/0.1 (+https://www.scourt.go.kr)",
+            ),
+            bootstrap_skip_send=_as_bool(
+                os.getenv("SCOURT_BOOTSTRAP_SKIP_SEND"),
+                True,
             ),
         )

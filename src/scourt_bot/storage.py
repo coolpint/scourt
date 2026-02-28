@@ -45,6 +45,11 @@ class StateStore:
             ).fetchone()
             return dict(row) if row else None
 
+    def is_empty(self) -> bool:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(1) AS cnt FROM notices").fetchone()
+            return int(row["cnt"]) == 0
+
     def upsert_notice(
         self,
         *,

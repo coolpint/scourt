@@ -61,6 +61,16 @@ class ScourtPipeline:
 
         stats = RunStats(scanned=len(ordered))
         now_iso = datetime.now(ZoneInfo(self.settings.timezone)).isoformat()
+        bootstrap_mode = (
+            not dry_run
+            and not force
+            and self.settings.bootstrap_skip_send
+            and self.store.is_empty()
+        )
+        if bootstrap_mode:
+            LOGGER.warning(
+                "초기 기준선 모드: DB가 비어 있어 이번 실행에서는 알림 전송 없이 상태만 저장합니다."
+            )
 
         for summary in ordered:
             try:
@@ -107,6 +117,11 @@ class ScourtPipeline:
                     timestamp_iso=now_iso,
                 )
                 stats.processed += 1
+
+                if bootstrap_mode:
+                    self.store.mark_sent(summary.notice_id, now_iso)
+                    stats.skipped += 1
+                    continue
 
                 if dry_run:
                     LOGGER.info("[DRY RUN] article generated: %s", detail.title)

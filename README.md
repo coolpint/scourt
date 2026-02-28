@@ -37,6 +37,7 @@ cp .env.example .env
 - `SCOURT_MAX_PAGES`: 매 실행 시 확인할 목록 페이지 수(기본 2)
 - `SCOURT_TIMEZONE`: 기본 `Asia/Seoul`
 - `SCOURT_SCHEDULE_HOURS`: 기본 `10,18`
+- `SCOURT_BOOTSTRAP_SKIP_SEND`: 상태 DB가 비어 있을 때 첫 실행 알림 전송을 건너뛰고 기준선만 저장(기본 `true`)
 
 ## 3) 1회 실행
 
@@ -73,6 +74,7 @@ scourt-bot schedule --run-now --dry-run
 중복 방지 방식:
 - `notice_id(seqnum)` 기준 레코드 관리
 - 제목/본문/PDF 해시로 콘텐츠 해시를 만들어 변경 없는 항목은 재전송하지 않음
+- DB가 비어 있는 초기/복구 실행에서는 과거 글 폭주를 막기 위해 알림 전송 없이 상태만 저장(기본 동작)
 
 ## 6) GitHub Actions로 상시 운영 (로컬이 꺼져도 실행)
 
