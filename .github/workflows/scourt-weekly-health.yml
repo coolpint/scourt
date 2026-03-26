@@ -1,0 +1,56 @@
+name: scourt-weekly-health
+
+on:
+  schedule:
+    # Friday 15:35 KST
+    - cron: "35 6 * * 5"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: scourt-weekly-health
+  cancel-in-progress: false
+
+jobs:
+  weekly-health:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      TEAMS_WEBHOOK_SECRET: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      TEAMS_WEBHOOK_VAR: ${{ vars.TEAMS_WEBHOOK_URL }}
+      SCOURT_TIMEZONE: Asia/Seoul
+      SCOURT_SCHEDULE_HOURS: "10,18"
+      SCOURT_MONITORED_WORKFLOW: .github/workflows/scourt-news-bot.yml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate required secret
+        run: |
+          if [ -n "${TEAMS_WEBHOOK_SECRET}" ]; then
+            echo "TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_SECRET}" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ -n "${TEAMS_WEBHOOK_VAR}" ]; then
+            echo "TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_VAR}" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "Missing TEAMS_WEBHOOK_URL in both repository Secrets and Variables."
+          exit 1
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Run weekly health check
+        run: |
+          python -m scourt_bot.weekly_health

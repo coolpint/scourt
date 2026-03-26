@@ -81,8 +81,10 @@ scourt-bot schedule --run-now --dry-run
 
 이미 워크플로 파일이 포함되어 있습니다:
 - `.github/workflows/scourt-news-bot.yml`
+- `.github/workflows/scourt-weekly-health.yml`
 - 실행 시각: 매일 `10:00`, `18:00` KST
 - GitHub cron 기준으로는 `01:00`, `09:00` UTC
+- 주간 점검: 매주 금요일 `15:35` KST (`06:35` UTC)
 
 설정 절차:
 1. GitHub 저장소에 코드 푸시
@@ -93,6 +95,7 @@ scourt-bot schedule --run-now --dry-run
 상태 유지:
 - 워크플로가 `data/scourt_news.db`를 GitHub Actions Cache로 복원/저장
 - 이전 실행 상태를 이어받아 중복 전송을 방지
+- 주간 점검 워크플로는 지난 7일 실행 로그를 집계해 정상/이상 여부를 Teams로 항상 보고
 
 ## 7) 크론으로 실행하고 싶을 때(대안)
 
