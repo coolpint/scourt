@@ -16,7 +16,7 @@ Teams 카드 포맷:
 ## 1) 설치
 
 ```bash
-cd /Users/air/codes/scourt
+cd /path/to/scourt
 python3 -m venv .venv
 source .venv/bin/activate
 pip install .
@@ -102,5 +102,5 @@ scourt-bot schedule --run-now --dry-run
 애플리케이션 내부 스케줄러 대신 크론을 써도 됩니다.
 
 ```cron
-0 10,18 * * * cd /Users/air/codes/scourt && . .venv/bin/activate && scourt-bot run >> logs/scourt-bot.log 2>&1
+0 10,18 * * * cd /path/to/scourt && . .venv/bin/activate && scourt-bot run >> logs/scourt-bot.log 2>&1
 ```
