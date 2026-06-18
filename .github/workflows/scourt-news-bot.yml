@@ -1,11 +1,6 @@
 name: scourt-news-bot
 
 on:
-  schedule:
-    # 10:00 KST
-    - cron: "0 1 * * *"
-    # 18:00 KST
-    - cron: "0 9 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -16,10 +11,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      TEAMS_WEBHOOK_SECRET: ${{ secrets.TEAMS_WEBHOOK_URL }}
-      TEAMS_WEBHOOK_VAR: ${{ vars.TEAMS_WEBHOOK_URL }}
       SCOURT_TIMEZONE: Asia/Seoul
-      SCOURT_MAX_PAGES: "2"
+      SCOURT_MAX_PAGES: "1"
       SCOURT_DB_PATH: data/scourt_news.db
       SCOURT_PDF_DIR: data/pdfs
     steps:
@@ -41,30 +34,15 @@ jobs:
           restore-keys: |
             scourt-state-${{ runner.os }}-${{ github.ref_name }}-
 
-      - name: Validate required secret
-        run: |
-          if [ -n "${TEAMS_WEBHOOK_SECRET}" ]; then
-            echo "Using repository secret: TEAMS_WEBHOOK_URL"
-            echo "TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_SECRET}" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          if [ -n "${TEAMS_WEBHOOK_VAR}" ]; then
-            echo "Using repository variable: TEAMS_WEBHOOK_URL"
-            echo "TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_VAR}" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          echo "Missing TEAMS_WEBHOOK_URL in both repository Secrets and Variables."
-          exit 1
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install .
 
-      - name: Run bot
+      - name: Run dry-run smoke check
         run: |
           mkdir -p data/pdfs logs
-          scourt-bot run 2>&1 | tee logs/run.log
+          scourt-bot run --dry-run 2>&1 | tee logs/run.log
 
       - name: Save state cache
         if: always()

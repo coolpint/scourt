@@ -14,6 +14,15 @@ def _as_int(value: str, default: int) -> int:
         return default
 
 
+def _as_optional_int(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError("SCOURT_INITIAL_LAST_SEEN_NOTICE_ID must be an integer")
+
+
 def _as_bool(value: str | None, default: bool) -> bool:
     if value is None:
         return default
@@ -35,7 +44,7 @@ def _as_hours(value: str) -> tuple[int, ...]:
             continue
         if 0 <= hour <= 23:
             hours.append(hour)
-    return tuple(sorted(set(hours))) or (10, 18)
+    return tuple(sorted(set(hours))) or (0, 3, 6, 9, 12, 15, 18, 21)
 
 
 @dataclass(frozen=True)
@@ -48,9 +57,17 @@ class Settings:
     schedule_hours: tuple[int, ...]
     db_path: Path
     pdf_dir: Path
-    teams_webhook_url: str | None
+    telegram_bot_token: str | None
+    telegram_chat_id: str | None
+    auto_writer_dir: Path | None
+    auto_writer_mode: str
     user_agent: str
     bootstrap_skip_send: bool
+    initial_last_seen_notice_id: int | None
+    news_search_enabled: bool
+    news_search_query_limit: int
+    news_search_result_limit: int
+    news_search_timeout_seconds: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -63,6 +80,8 @@ class Settings:
             db_path = root / db_path
         if not pdf_dir.is_absolute():
             pdf_dir = root / pdf_dir
+        auto_writer_dir_raw = os.getenv("AUTO_WRITER_PROJECT_DIR")
+        auto_writer_dir = Path(auto_writer_dir_raw).expanduser().resolve() if auto_writer_dir_raw else None
 
         return cls(
             list_url=os.getenv(
@@ -75,10 +94,13 @@ class Settings:
                 5, _as_int(os.getenv("SCOURT_TIMEOUT_SECONDS", "20"), 20)
             ),
             timezone=os.getenv("SCOURT_TIMEZONE", "Asia/Seoul"),
-            schedule_hours=_as_hours(os.getenv("SCOURT_SCHEDULE_HOURS", "10,18")),
+            schedule_hours=_as_hours(os.getenv("SCOURT_SCHEDULE_HOURS", "0,3,6,9,12,15,18,21")),
             db_path=db_path,
             pdf_dir=pdf_dir,
-            teams_webhook_url=os.getenv("TEAMS_WEBHOOK_URL") or None,
+            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
+            telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
+            auto_writer_dir=auto_writer_dir,
+            auto_writer_mode=os.getenv("AUTO_WRITER_MODE", "live"),
             user_agent=os.getenv(
                 "SCOURT_USER_AGENT",
                 "scourt-news-bot/0.1 (+https://www.scourt.go.kr)",
@@ -86,5 +108,21 @@ class Settings:
             bootstrap_skip_send=_as_bool(
                 os.getenv("SCOURT_BOOTSTRAP_SKIP_SEND"),
                 True,
+            ),
+            initial_last_seen_notice_id=_as_optional_int(
+                os.getenv("SCOURT_INITIAL_LAST_SEEN_NOTICE_ID")
+            ),
+            news_search_enabled=_as_bool(
+                os.getenv("SCOURT_NEWS_SEARCH_ENABLED"),
+                True,
+            ),
+            news_search_query_limit=max(
+                1, _as_int(os.getenv("SCOURT_NEWS_SEARCH_QUERY_LIMIT", "3"), 3)
+            ),
+            news_search_result_limit=max(
+                1, _as_int(os.getenv("SCOURT_NEWS_SEARCH_RESULT_LIMIT", "8"), 8)
+            ),
+            news_search_timeout_seconds=max(
+                3, _as_int(os.getenv("SCOURT_NEWS_SEARCH_TIMEOUT_SECONDS", "8"), 8)
             ),
         )

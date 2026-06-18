@@ -40,7 +40,7 @@ def _run_job(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scourt-bot",
-        description="대법원 보도자료 수집/기사 생성/Teams 전송 봇",
+        description="대법원 보도자료 수집/Auto-Writer 기사 생성 봇",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

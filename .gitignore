@@ -4,6 +4,7 @@
 __pycache__/
 *.pyc
 logs/
+data/auto_writer_sources/
 data/pdfs/
 data/*.db
 .pycache/

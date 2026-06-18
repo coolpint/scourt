@@ -320,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         repository=args.repository,
         workflow_ref=args.workflow_ref,
         github_token=github_token,
-        webhook_url=settings.teams_webhook_url,
+        webhook_url=os.getenv("TEAMS_WEBHOOK_URL") or None,
     )
     report = reporter.fetch_report()
     reporter.send_report(report, dry_run=args.dry_run)
