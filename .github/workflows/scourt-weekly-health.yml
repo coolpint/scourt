@@ -35,4 +35,4 @@ jobs:
 
       - name: Run weekly health check
         run: |
-          python -m scourt_bot.weekly_health --dry-run
+          python -m scourt_bot.weekly_health --json

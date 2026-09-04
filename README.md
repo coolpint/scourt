@@ -94,9 +94,15 @@ sqlite3 /path/to/scourt/data/scourt_news.db \
 
 GitHub Actions 워크플로는 Auto-Writer 프로젝트와 CMS 인증이 없는 원격 환경에서 실제 기사 생성을 하지 않도록 수동 smoke check로만 유지합니다:
 - `.github/workflows/scourt-news-bot.yml`: 수동 실행 시 `scourt-bot run --dry-run`
-- `.github/workflows/scourt-weekly-health.yml`: 수동 실행 시 최근 workflow 로그 점검 payload 출력
+- `.github/workflows/scourt-weekly-health.yml`: 수동 실행 시 최근 workflow 로그 점검 결과를 JSON으로 출력
 
 실제 운영에 필요한 Auto-Writer 프로젝트 경로, Gemini/CMS 인증, Telegram 설정은 로컬 머신의 `.env`와 Hermes 환경에서 관리합니다.
+
+주간점검은 Teams로 보내지 않고 Codex 앱이나 터미널에서 직접 확인합니다:
+
+```bash
+python -m scourt_bot.weekly_health
+```
 
 ## 7) 크론으로 실행하고 싶을 때(대안)
 

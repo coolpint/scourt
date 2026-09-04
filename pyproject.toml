@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "scourt-news-bot"
 version = "0.1.0"
-description = "Supreme Court press release collector and Teams notifier"
+description = "Supreme Court press release collector and Auto-Writer runner"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

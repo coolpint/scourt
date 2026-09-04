@@ -45,7 +45,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="즉시 1회 실행")
-    run_parser.add_argument("--dry-run", action="store_true", help="Teams 전송 없이 실행")
+    run_parser.add_argument("--dry-run", action="store_true", help="Auto-Writer 실행 없이 점검")
     run_parser.add_argument("--force", action="store_true", help="기존 전송 건도 재전송")
     run_parser.add_argument("--max-pages", type=int, default=None, help="수집 페이지 수")
 
@@ -53,7 +53,7 @@ def _build_parser() -> argparse.ArgumentParser:
     schedule_parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="스케줄 실행 시 Teams 전송 없이 실행",
+        help="스케줄 실행 시 Auto-Writer 실행 없이 점검",
     )
     schedule_parser.add_argument("--run-now", action="store_true", help="스케줄 등록 전 1회 즉시 실행")
     schedule_parser.add_argument("--max-pages", type=int, default=None, help="수집 페이지 수")

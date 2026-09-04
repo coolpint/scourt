@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import logging
 import os
 import re
 import zipfile
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 from .config import Settings
 
 API_BASE = "https://api.github.com"
+LOGGER = logging.getLogger(__name__)
 SUMMARY_RE = re.compile(
     r"실행 완료: scanned=(?P<scanned>\d+) processed=(?P<processed>\d+) "
     r"sent=(?P<sent>\d+) skipped=(?P<skipped>\d+) failed=(?P<failed>\d+)"
@@ -46,23 +48,24 @@ class WeeklyHealthReporter:
         settings: Settings,
         repository: str,
         workflow_ref: str,
-        github_token: str,
-        webhook_url: str | None,
+        github_token: str | None,
+        expect_schedule: bool,
     ):
         self.settings = settings
         self.repository = repository
         self.workflow_ref = workflow_ref
         self.github_token = github_token
-        self.webhook_url = webhook_url
+        self.expect_schedule = expect_schedule
         self.session = requests.Session()
         self.session.headers.update(
             {
                 "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self.github_token}",
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "scourt-weekly-health/0.1",
             }
         )
+        if self.github_token:
+            self.session.headers["Authorization"] = f"Bearer {self.github_token}"
         self.kst = ZoneInfo(self.settings.timezone)
 
     def fetch_report(self) -> dict[str, Any]:
@@ -79,17 +82,31 @@ class WeeklyHealthReporter:
         schedule_runs = [run for run in recent_runs if run.get("event") == "schedule"]
         manual_runs = [run for run in recent_runs if run.get("event") != "schedule"]
 
-        expected_schedule_runs = self._expected_run_count(since_kst, now_kst)
-        metrics = [self._collect_run_metrics(run) for run in schedule_runs]
+        expected_schedule_runs = (
+            self._expected_run_count(since_kst, now_kst)
+            if self.expect_schedule
+            else None
+        )
+        metrics = [self._collect_run_metrics(run) for run in recent_runs]
 
-        workflow_failures = [item for item in metrics if item.conclusion != "success"]
+        workflow_failures = [
+            item
+            for item in metrics
+            if item.conclusion is not None and item.conclusion != "success"
+        ]
+        in_progress_runs = [item for item in metrics if item.conclusion is None]
         bot_failures = [item for item in metrics if (item.failed or 0) > 0]
         missing_logs = [item for item in metrics if not item.log_found]
         total_sent = sum(item.sent or 0 for item in metrics)
         parsed_metrics = [item for item in metrics if item.log_found]
 
         issues: list[str] = []
-        if len(schedule_runs) != expected_schedule_runs:
+        if not metrics:
+            issues.append("최근 1주간 확인된 워크플로 실행이 없습니다.")
+        if (
+            expected_schedule_runs is not None
+            and len(schedule_runs) != expected_schedule_runs
+        ):
             issues.append(
                 f"정기 실행 수가 예상 {expected_schedule_runs}회 대비 실제 {len(schedule_runs)}회입니다."
             )
@@ -101,10 +118,11 @@ class WeeklyHealthReporter:
             issues.append(
                 f"봇 처리 오류: run #{item.run_number} 에서 failed={item.failed}"
             )
-        for item in missing_logs[:5]:
-            issues.append(
-                f"로그 미확인: run #{item.run_number} ({self._fmt_kst(item.created_at)})"
-            )
+        if self.github_token:
+            for item in missing_logs[:5]:
+                issues.append(
+                    f"로그 미확인: run #{item.run_number} ({self._fmt_kst(item.created_at)})"
+                )
 
         latest_success = next(
             (item for item in metrics if item.conclusion == "success"),
@@ -122,6 +140,7 @@ class WeeklyHealthReporter:
             "manual_runs": len(manual_runs),
             "successful_runs": len([item for item in metrics if item.conclusion == "success"]),
             "failed_runs": len(workflow_failures),
+            "in_progress_runs": len(in_progress_runs),
             "parsed_logs": len(parsed_metrics),
             "bot_failed_runs": len(bot_failures),
             "total_sent": total_sent,
@@ -130,51 +149,34 @@ class WeeklyHealthReporter:
             f"{os.path.basename(self.workflow_ref)}",
         }
 
-    def send_report(self, report: dict[str, Any], *, dry_run: bool) -> None:
+    def print_report(self, report: dict[str, Any], *, as_json: bool) -> None:
         title = (
             "대법원 봇 주간 점검: 정상 작동중"
             if report["healthy"]
             else "대법원 봇 주간 점검: 점검 필요"
         )
         body = self._format_body(report)
-        payload = {
-            "@type": "MessageCard",
-            "@context": "https://schema.org/extensions",
-            "summary": title,
-            "themeColor": "2E7D32" if report["healthy"] else "C62828",
-            "title": title,
-            "sections": [
-                {
-                    "activityTitle": f"**{title}**",
-                    "text": body,
-                    "markdown": True,
-                }
-            ],
-            "potentialAction": [
-                {
-                    "@type": "OpenUri",
-                    "name": "워크플로 보기",
-                    "targets": [{"os": "default", "uri": report["workflow_url"]}],
-                }
-            ],
-        }
 
-        latest_success = report.get("latest_success")
-        if latest_success is not None:
-            payload["potentialAction"].append(
-                {
-                    "@type": "OpenUri",
-                    "name": "최근 정상 실행 보기",
-                    "targets": [{"os": "default", "uri": latest_success.html_url}],
+        if as_json:
+            printable = dict(report)
+            printable["window_start"] = self._fmt_kst(report["window_start"])
+            printable["window_end"] = self._fmt_kst(report["window_end"])
+            latest_success = report.get("latest_success")
+            if latest_success is not None:
+                printable["latest_success"] = {
+                    "run_number": latest_success.run_number,
+                    "created_at": self._fmt_kst(latest_success.created_at),
+                    "html_url": latest_success.html_url,
                 }
-            )
-
-        if dry_run or not self.webhook_url:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            print(json.dumps(printable, ensure_ascii=False, indent=2))
             return
 
-        response = requests.post(self.webhook_url, json=payload, timeout=20)
-        response.raise_for_status()
+        print(title)
+        print(body)
+        print(f"워크플로: {report['workflow_url']}")
+        latest_success = report.get("latest_success")
+        if latest_success is not None:
+            print(f"최근 정상 실행 URL: {latest_success.html_url}")
 
     def _fetch_runs(self) -> list[dict[str, Any]]:
         workflow_ref = quote(self.workflow_ref, safe="")
@@ -182,10 +184,14 @@ class WeeklyHealthReporter:
             f"{API_BASE}/repos/{self.repository}/actions/workflows/"
             f"{workflow_ref}/runs?per_page=100"
         )
-        response = self.session.get(url, timeout=20)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("workflow_runs", [])
+        runs: list[dict[str, Any]] = []
+        while url:
+            response = self.session.get(url, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            runs.extend(data.get("workflow_runs", []))
+            url = response.links.get("next", {}).get("url")
+        return runs
 
     def _collect_run_metrics(self, run: dict[str, Any]) -> RunMetrics:
         item = RunMetrics(
@@ -197,11 +203,22 @@ class WeeklyHealthReporter:
             html_url=run["html_url"],
         )
 
-        artifact = self._find_log_artifact(item.run_id)
+        if not self.github_token:
+            return item
+
+        try:
+            artifact = self._find_log_artifact(item.run_id)
+        except requests.HTTPError as exc:
+            LOGGER.debug("로그 아티팩트 조회 실패: run_id=%s error=%s", item.run_id, exc)
+            return item
         if artifact is None:
             return item
 
-        log_text = self._download_run_log(artifact["archive_download_url"])
+        try:
+            log_text = self._download_run_log(artifact["archive_download_url"])
+        except requests.HTTPError as exc:
+            LOGGER.debug("로그 아티팩트 다운로드 실패: run_id=%s error=%s", item.run_id, exc)
+            return item
         if not log_text:
             return item
 
@@ -256,10 +273,19 @@ class WeeklyHealthReporter:
         return count
 
     def _format_body(self, report: dict[str, Any]) -> str:
+        expected = report["expected_schedule_runs"]
+        if expected is None:
+            schedule_line = f"정기 실행: 확인 {report['actual_schedule_runs']}회 (예상 비교 꺼짐)"
+        else:
+            schedule_line = (
+                f"정기 실행: 예상 {expected}회 / 확인 {report['actual_schedule_runs']}회"
+            )
+
         lines = [
             f"기간: {self._fmt_kst(report['window_start'])} ~ {self._fmt_kst(report['window_end'])}",
-            f"정기 실행: 예상 {report['expected_schedule_runs']}회 / 확인 {report['actual_schedule_runs']}회",
+            schedule_line,
             f"워크플로 성공: {report['successful_runs']}회 / 실패: {report['failed_runs']}회",
+            f"진행 중 워크플로: {report['in_progress_runs']}회",
             f"로그 확인: {report['parsed_logs']}회 / 봇 처리 오류 포함 실행: {report['bot_failed_runs']}회",
             f"지난 1주 기사 전송 수: {report['total_sent']}건",
             f"수동 실행 수: {report['manual_runs']}회",
@@ -290,9 +316,14 @@ class WeeklyHealthReporter:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scourt-weekly-health",
-        description="Inspect weekly GitHub Actions health and send a Teams report.",
+        description="Inspect weekly GitHub Actions health and print a local report.",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print Teams payload instead of sending")
+    parser.add_argument("--json", action="store_true", help="Print structured JSON instead of text")
+    parser.add_argument(
+        "--expect-schedule",
+        action="store_true",
+        help="Compare scheduled workflow run count against SCOURT_SCHEDULE_HOURS",
+    )
     parser.add_argument(
         "--workflow-ref",
         default=os.getenv("SCOURT_MONITORED_WORKFLOW", ".github/workflows/scourt-news-bot.yml"),
@@ -311,19 +342,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = Settings.load()
-    github_token = os.getenv("GITHUB_TOKEN")
-    if not github_token:
-        raise SystemExit("GITHUB_TOKEN is required")
-
     reporter = WeeklyHealthReporter(
         settings=settings,
         repository=args.repository,
         workflow_ref=args.workflow_ref,
-        github_token=github_token,
-        webhook_url=os.getenv("TEAMS_WEBHOOK_URL") or None,
+        github_token=os.getenv("GITHUB_TOKEN") or None,
+        expect_schedule=args.expect_schedule,
     )
     report = reporter.fetch_report()
-    reporter.send_report(report, dry_run=args.dry_run)
+    reporter.print_report(report, as_json=args.json)
     return 0
 
 
